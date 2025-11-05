@@ -6,43 +6,35 @@ from kivy.uix.widget import Widget
 from kivy.graphics import Line, Color, Rectangle
 from kivy.core.text import Label as CoreLabel
 from kivy.uix.label import Label
+from logic import SOSGame, SimpleGame, GeneralGame
 
 
 class BoardWidget(Widget):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.grid_size = None
+    #Handles grid functionality
+    def __init__(self, game, app):
+        super().__init__()
+        self.grid_size = 0
+        self.game = game
+        self.app = app
         self.grid = []
-        self.current_letter = 'S'
-        self.bind(size=self.redraw, pos=self.redraw)
+        self.current_letter = 'S'  # Default letter
+        self.current_player = 'Red'  # Default starting player
+        self.bind(size=self.create_grid, pos=self.create_grid)
 
     def set_grid_size(self, n):
         self.grid_size = n
         self.grid = [['' for _ in range(n)] for _ in range(n)]
-        self.redraw()
+        
 
-    def set_letter(self, letter):
+    def toggle_letter(self, letter):
         self.current_letter = letter
 
-    def on_touch_down(self, touch):
-        if self.grid_size is None:
-            return
-        if not self.collide_point(*touch.pos):
-            return
-        w, h = self.width, self.height
-        cell_w, cell_h = w / self.grid_size, h / self.grid_size
-        col = int((touch.x - self.x) // cell_w)
-        row = int((touch.y - self.y) // cell_h)
-        if 0 <= row < self.grid_size and 0 <= col < self.grid_size:
-            if self.grid[row][col] == '':
-                self.grid[row][col] = self.current_letter
-                self.redraw()
-                #Switch player after a successful move
-
-    def redraw(self, *args):
+    def switch_player(self):
+        self.current_player = 'Blue' if self.current_player == 'Red' else 'Red'
+        self.turn_indicator.text = f"Current Turn: {self.current_player}"
+        
+    def create_grid(self, *args):
         self.canvas.clear()
-        if self.grid_size is None:
-            return
         w, h = self.width, self.height
         cell_w, cell_h = w / self.grid_size, h / self.grid_size
         with self.canvas:
@@ -51,90 +43,152 @@ class BoardWidget(Widget):
             for i in range(1, self.grid_size):
                 Line(points=[i * cell_w, 0, i * cell_w, h])
                 Line(points=[0, i * cell_h, w, i * cell_h])
-            # Draw letters
-            for row in range(self.grid_size):
-                for col in range(self.grid_size):
-                    letter = self.grid[row][col]
-                    if letter:
-                        label = CoreLabel(text=letter, font_size=min(cell_w, cell_h) * 0.7)
-                        label.refresh()
-                        texture = label.texture
-                        x = col * cell_w + (cell_w - texture.width) / 2
-                        y = row * cell_h + (cell_h - texture.height) / 2
-                        Rectangle(texture=texture, pos=(x, y), size=texture.size)
+    
+    def make_move(self, row, col):
+        letter = self.grid[row][col]
+        if letter:
+            cell_w, cell_h = self.width / self.grid_size, self.height / self.grid_size
+            label = CoreLabel(text=letter, font_size=min(cell_w, cell_h) * 0.7)
+            label.refresh()
+            texture = label.texture
+            x = col * cell_w + (cell_w - texture.width) / 2
+            y = row * cell_h + (cell_h - texture.height) / 2
+            with self.canvas:
+                Color(1, 1, 1, 1)
+                Rectangle(texture=texture, pos=(x, y), size=texture.size)
+            self.game.total_moves += 1
+            self.check_game_status(self.game)
+
+
+    def check_game_status(self, game):
+        if self.game.checkForSOS(self.grid, self.grid_size):
+            self.game.SOSFound(self)
+            self.app.announce_win(self.current_player)
+        elif self.game.checkFullBoard(self):
+            self.app.announce_draw()
+        else:
+            self.switch_player()
+            
+
+    def on_touch_down(self, touch):
+        if getattr(self, 'game_over', False):
+            return
+        if not self.collide_point(*touch.pos):
+            return
+        w, h = self.width, self.height
+        cell_w, cell_h = w / self.grid_size, h / self.grid_size
+        col = int((touch.x - self.x) // cell_w)
+        row = int((touch.y - self.y) // cell_h)
+
+        #print(f"Touch at ({touch.x}, {touch.y}) maps to row {row}, col {col}")
+        if 0 <= row < self.grid_size and 0 <= col < self.grid_size:
+            if self.grid[row][col] == '':
+                self.grid[row][col] = self.current_letter
+                self.make_move(row, col)
+
+
 
 class SOSApp(App):
+    #App Layout (buttons, scoreboard, turn indicator)
     def build(self):
-        self.grid_size = None  # Don't draw grid until user input
-        self.selected_mode = None
-        self.root = BoxLayout(orientation='vertical')
-        self.input_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=100)
-        self.size_input = TextInput(hint_text='Enter board size', input_filter='int', multiline=False)
-        self.input_box.add_widget(self.size_input)
+        self.layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+        
 
-        # Game Mode Buttons
-        self.simple_mode = Button(text='Simple', size_hint_x=None, size_hint_y=None, height=100, width=150)
-        self.general_mode = Button(text='General', size_hint_x=None, size_hint_y=None, height=100, width=150)
-        self.input_box.add_widget(self.simple_mode)
-        self.input_box.add_widget(self.general_mode)
+        button_layout = BoxLayout(size_hint_y=None, height=50)
+        # Board Size Input
+        self.size_input_field = TextInput(hint_text='Enter board size', input_filter='int', multiline=False, height = 50, size_hint_y=None)
+        button_layout.add_widget(self.size_input_field)
+    
+        # Simple Mode Button
+        simple_mode = Button(text='Simple', size_hint_x=None, size_hint_y=None, height=100, width=150)
+        simple_mode.bind(on_press=self.set_simple_game)
+        button_layout.add_widget(simple_mode)
 
-        # Set button
-        self.set_button = Button(text='New Game', size_hint_x=None, size_hint_y=None, height=100, width=100)
-        self.input_box.add_widget(self.set_button)
+        # General Mode Button
+        general_mode = Button(text='General', size_hint_x=None, size_hint_y=None, height=100, width=150)
+        general_mode.bind(on_press=self.set_general_game)
+        button_layout.add_widget(general_mode)
+        
+        #New Game Button
+        new_game = Button(text='New Game', size_hint_x=None, size_hint_y=None, height=100, width=150)
+        new_game.bind(on_press=self.start_game)
+        button_layout.add_widget(new_game)
+        self.layout.add_widget(button_layout)
 
-        # Letter selection
-        self.letterS_input = Button(text='S', size_hint_x=None, size_hint_y=None, height=100, width=150)
-        self.letterO_input = Button(text='O', size_hint_x=None, size_hint_y=None, height=100, width=150)
-        self.input_box.add_widget(self.letterS_input)
-        self.input_box.add_widget(self.letterO_input)
-        # Bind the actual letter buttons and ignore the unused event parameter with _
-        self.letterS_input.bind(on_press=lambda _=None: self.board.set_letter('S'))
-        self.letterO_input.bind(on_press=lambda _=None: self.board.set_letter('O'))
+        return self.layout
 
-        # Board widget
-        self.board = BoardWidget(size_hint_y=1, height=400)
-        self.root.add_widget(self.input_box)
-        self.root.add_widget(self.board)
+    def set_simple_game(self, _):
+        self.game = SimpleGame()
+        
+    def set_general_game(self, _):
+        self.game = GeneralGame()
 
-        # Game mode indicator (visible with default text)
-        self.game_mode_label = Label(text="Game Mode: None", size_hint_y=None, height=50, font_size=24, color=(1,1,1,1), bold=True)
-        self.root.add_widget(self.game_mode_label)
+    def start_game(self, _):
+        #Check for existing board and remove it
+        if hasattr(self, 'board') and self.board is not None:
+            self.layout.remove_widget(self.board)
+            self.board = None
 
-        # Bindings
-        self.simple_mode.bind(on_press=self.on_mode_selected)
-        self.general_mode.bind(on_press=self.on_mode_selected)
-        self.set_button.bind(on_press=self.on_set_button)
-
-        return self.root
-
-
-        # When a game mode is selected (after a valid board size was set), remove the input widgets
-    def on_mode_selected(self, instance):
-        if self.board.grid_size is None:
-            return
-        self.selected_mode = instance.text
-        # Show selected game mode below the grid
-        self.game_mode_label.text = f"Game Mode: {self.selected_mode}"
-
-
-    def on_set_button(self, instance):
+        self.board = BoardWidget(self.game, app=self)
         try:
-            n = int(self.size_input.text)
+            n = int(self.size_input_field.text)
             if 3 <= n <= 10:
                 self.board.set_grid_size(n)
-                # Remove only size input and new game button; keep mode buttons until user selects one
-                for w in (self.size_input, self.set_button):
-                    if w in self.input_box.children:
-                        self.input_box.remove_widget(w)
-                # Update label to reflect current state if mode not chosen yet
-                if not self.selected_mode:
-                    self.game_mode_label.text = "Game Mode: (select above)"
-                else:
-                    self.game_mode_label.text = f"Game Mode: {self.selected_mode}"
+                self.layout.add_widget(self.board)
+                self.board.size_hint_y = 0.7
+                #self.layout.remove_widget(self.size_input_field)
+                self.add_letter_buttons(_)
+                self.add_scoreboard(_)
+            
         except ValueError:
-            pass
+            print("Invalid board size. Please enter an integer between 3 and 10.")
+            return
+        
+    def add_letter_buttons(self,_):
+        letter_layout = BoxLayout(size_hint_y=None, height=50)
+        s_button = Button(text='S')
+        o_button = Button(text='O')
+        s_button.bind(on_press=lambda x: self.board.toggle_letter('S'))
+        o_button.bind(on_press=lambda x: self.board.toggle_letter('O'))
+        letter_layout.add_widget(s_button)
+        letter_layout.add_widget(o_button)
+        self.layout.add_widget(letter_layout)
 
+    def add_scoreboard(self,_):
+        info_layout = BoxLayout(size_hint_y=None, height=100, spacing=5)
+        red_score = self.game.scores['Red Player']
+        blue_score2 = self.game.scores['Blue Player']
+
+        red_scoreboard = Label(text=f"Player 1 score: {red_score}", size_hint_y=None, height=50, font_size=24, color=(1,1,1,1), bold=True)
+        blue_scoreboard = Label(text=f"Player 2 score: {blue_score2}", size_hint_y=None, height=50, font_size=24, color=(1,1,1,1), bold=True)
+        
+        info_layout.add_widget(red_scoreboard)
+        info_layout.add_widget(blue_scoreboard)
+
+        # Turn Indicator
+        self.turn_indicator = Label(text=f"Current Turn: {self.board.current_player}", size_hint_y=None, height=50, font_size=24, color=(1,1,1,1), bold=True)
+        info_layout.add_widget(self.turn_indicator)
+        self.board.turn_indicator = self.turn_indicator
+        self.layout.add_widget(info_layout)
+
+
+    def announce_win(self, current_player):
+        if hasattr(self, 'turn_indicator'):
+            self.turn_indicator.text = f"Game Over! {current_player} wins!"
+        if hasattr(self, 'board'):
+            self.board.game_over = True
+        return
+    
+    def announce_draw(self):
+        if hasattr(self, 'turn_indicator'):
+            self.turn_indicator.text = f"Game Over! It's a draw!"
+        if hasattr(self, 'board'):
+            self.board.game_over = True
+        return
+
+        
 
 if __name__ == '__main__': 
     app = SOSApp()
     app.run()
+
