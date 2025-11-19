@@ -1,17 +1,157 @@
-<SOSBoard>:    
-    canvas:
-        Rectangle:
-            pos: self.center_x - 5, 0
-            size: 10, self.height
+<RootWidget>:
+    orientation: "vertical"
+    spacing: 10
+    padding: 10
+
+    # Top controls
+    BoxLayout:
+        id: top_bar
+        orientation: "horizontal"
+        size_hint_y: None
+        height: "60dp"
+        spacing: 10
+
+        TextInput:
+            id: size_input_field
+            hint_text: "Enter board size"
+            input_filter: "int"
+            multiline: False
+            size_hint_x: 0.3
+            size_hint_y: None
+            height: "40dp"
+
+        Button:
+            text: "Simple"
+            size_hint_x: None
+            width: 120
+            on_press: app.set_simple_game()
+
+        Button:
+            text: "General"
+            size_hint_x: None
+            width: 120
+            on_press: app.set_general_game()
+
+        Button:
+            text: "New Game"
+            size_hint_x: None
+            width: 120
+            on_press: app.start_game()
+
+    # Board Container
+    BoxLayout:
+        id: board_container
+        orientation: "horizontal"
+        spacing: 10
+        size_hint_y: 1
+
+
+        BoxLayout:
+            id: red_layout
+            orientation: 'vertical'
+            size_hint_x: 0.2
             
-    Label:
-        font_size: 70  
-        center_x: root.width / 4
-        top: root.top - 50
-        text: "0"
+            Label:
+                text: "Red Player"
+                color: 1, 0.3, 0.3, 1
+                bold: True
+                font_size: 40
+                size_hint_y: None
+                height: "30dp"
+
+            Button:
+                id: red_player_button
+                text: "Human"
+                size_hint_x: None
+                size_hint_y: None
+                width: "120dp"
+                #on_press: 
+            Button:
+                id: red_computer_button
+                text: "Computer"
+                size_hint_x: None
+                size_hint_y: None
+                width: "120dp"
+                on_press: app.board.initialize_ai_opponent("Red")
+            Label:
+                id: red_score
+                text: "Red score: "
+                size_hint_y: None
+                font_size: 26
+                color: (1,1,1,1)
+                bold: True
+
+        # BOARD SPACE
+        BoxLayout:
+            id: board_container
+            size_hint_x: 1
+            padding: 8
+
+        BoxLayout:
+            id: blue_layout
+            orientation: 'vertical'
+            size_hint_x: 0.2
+            
+            Label:
+                text: "Blue Player"
+                color: 0.3, 0.3, 1, 1
+                bold: True
+                font_size: 40
+                size_hint_y: None
+                height: "30dp"
+            Button:
+                id: blue_player_button
+                text: "Human"
+                size_hint_x: None
+                size_hint_y: None
+                width: "120dp"
+                
+            Button:
+                id: blue_computer_button
+                text: "Computer"
+                size_hint_x: None
+                size_hint_y: None
+                width: "120dp"
+                on_press: app.board.initialize_ai_opponent("Blue")
+            Label:
+                id: blue_score
+                text: "Blue score: "
+                size_hint_y: None
+                font_size: 26
+                color: (1,1,1,1)
+                bold: True
+
+    #Info Layout
+    BoxLayout:
+        id: bottom_layout
+        orientation: "horizontal"  
+        size_hint_y: None 
+        height: "50dp"
+        spacing: 10
+        disabled: True
+
+        Button:
+            id: s_button
+            text: "S"
+            on_press: app.board.toggle_letter('S')
+            
+
+        Button:
+            id: o_button
+            text: "O"
+            on_press: app.board.toggle_letter('O')
+    BoxLayout:
+        size_hint_y: 0.05
+        Label:
+            id: turn_indicator
+            text: "Current Turn: "
+
+    
+
         
-    Label:
-        font_size: 70  
-        center_x: root.width * 3 / 4
-        top: root.top - 50
-        text: "0"
+            
+
+
+
+        
+
