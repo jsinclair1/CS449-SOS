@@ -7,6 +7,7 @@ from kivy.uix.widget import Widget
 from kivy.graphics import Line, Color, Rectangle
 from kivy.core.text import Label as CoreLabel
 from kivy.uix.label import Label
+from kivy.clock import Clock
 from logic import SOSGame, SimpleGame, GeneralGame
 from player import Computer, Human
 import random, time
@@ -23,36 +24,13 @@ class BoardWidget(Widget):
         self.current_letter = 'S'  # Default letter
         self.players = [Human("Red"), Human("Blue")]
         self.bind(size=self.create_grid, pos=self.create_grid)
+        self.recording = False
+        self.game_over = False
 
     def set_grid_size(self, n):
         self.grid_size = n
         self.grid = [['' for _ in range(n)] for _ in range(n)]
-        
-    def toggle_letter(self, letter):
-        if self.current_letter in ['S', 'O']:
-            self.current_letter = letter
-        else:
-            self.current_letter = 'S'
-        
-
-    def initialize_ai_opponent(self, color):
-        for player in self.players:
-            if player.color == color:
-                self.players.remove(player)
-
-        computer_opponent = Computer(color)
-        self.players.append(computer_opponent)
-        self.switch_player()
-        print("CPU has joined")
-
-    def switch_player(self):
-        self.current_player = self.players[(self.game.total_moves + 1) % 2]
-        turn_indicator = self.app.root.ids.turn_indicator
-        turn_indicator.text = f"Current Turn: {self.current_player.color}"
-        if isinstance(self.current_player, Computer):
-            self.computer_move()
-
-
+    
     def create_grid(self, *args):
         self.canvas.clear()
         if not self.grid_size:
@@ -71,6 +49,30 @@ class BoardWidget(Widget):
                 y = self.y + j * cell_h
                 Line(points=[self.x, y, self.x + w, y])
 
+    def toggle_letter(self, letter):
+        if self.current_letter in ['S', 'O']:
+            self.current_letter = letter
+        else:
+            self.current_letter = 'S'
+        
+    def initialize_ai_opponent(self, color):
+        for player in self.players:
+            if player.color == color:
+                self.players.remove(player)
+
+        computer_opponent = Computer(color)
+        self.players.append(computer_opponent)
+        self.switch_player()
+        print("CPU has joined")
+
+    def switch_player(self):
+        self.current_player = self.players[(self.game.total_moves) % 2]
+        turn_indicator = self.app.root.ids.turn_indicator
+        turn_indicator.text = f"Current Turn: {self.current_player.color}"
+        if isinstance(self.current_player, Computer):
+            time.sleep(.8)
+            self.computer_move()
+    
     def make_move(self, row, col):
         location = (row,col)
         cell_w = self.width / self.grid_size
@@ -80,10 +82,9 @@ class BoardWidget(Widget):
         label.refresh()
         texture = label.texture
 
-        # Column: left edge of the cell
+        
         cell_left = self.x + col * cell_w
 
-        # Row 0 = top, so convert to "row from bottom"
         row_from_bottom = self.grid_size - 1 - row
         cell_bottom = self.y + row_from_bottom * cell_h
 
@@ -94,18 +95,11 @@ class BoardWidget(Widget):
         with self.canvas:
             Color(1, 1, 1, 1)
             Rectangle(texture=texture, pos=(x, y), size=texture.size)
-
+        if self.recording:
+            self.record_move(row, col)
         self.game.total_moves += 1
-        self.check_game_status(location)
-
-    def check_game_status(self, last_move):
-        if self.game.checkForSOS(self.grid, self.grid_size):
-            self.game.SOSFound(self)
-            self.app.announce_win(self.current_player)
-        elif self.game.checkFullBoard(self):
-            self.app.announce_draw()
-        else:
-            self.switch_player()         
+        self.check_game_status()
+        return  
 
     def on_touch_down(self, touch):
         if getattr(self, 'game_over', False):
@@ -130,16 +124,74 @@ class BoardWidget(Widget):
         #next_move = calculate_move(self, self.grid)
         time.sleep(1)
         letters = ['S', 'O']
-        while True:
+        while not self.game_over:
+            delay = .8
             row = random.randrange(self.grid_size)
             col = random.randrange(self.grid_size)
             self.current_letter = letters[random.randrange(5) % 2]
             if self.grid[row][col] == '':
                 self.grid[row][col] = self.current_letter
-                self.make_move(row, col)
+                Clock.schedule_once(lambda dt, r=row, c=col, l=self.current_letter, clr=self.current_player.color: self.make_move(r, c), delay)
                 break
         return
     
+    def record_move(self,row, col):
+        with open('gameplay.txt', 'a') as file:
+            file.write(f"{self.current_player.color}, {self.current_letter}, {row}, {col} \n")
+    
+    def record_game(self):
+        self.recording = True
+        with open('gameplay.txt', 'w') as file:
+            file.write(f"{self.game.__class__.__name__}\n")
+        print("Starting recording")
+    
+    def get_player_by_color(self, color):
+        for player in self.players:
+            if player.color == color:
+                return player
+    
+    def replay_move(self, row, col, letter, color):
+        row, col = int(row), int(col)
+        for player in self.players:
+                    if player.color == color:
+                        self.current_player = player
+                        break
+        self.current_letter = letter
+        self.grid[row][col] = letter
+        # Apply move
+        self.make_move(row, col)
+
+    def replay_game(self):
+        print("Replay")
+        delay = 0
+        with open('gameplay.txt', 'r') as file:
+            next(file)
+            for line in file:
+                color, letter, row, col = line.strip().split(', ')
+                #ChatGPT Assisted
+                Clock.schedule_once(lambda dt, r=row, c=col, l=letter, clr=color: self.replay_move(r, c, l, clr), delay)
+                delay += .8
+        return
+    
+    def check_game_status(self):
+        if self.game.checkForSOS(self.grid, self.grid_size):
+            self.game.SOSFound(self.current_player)
+            if self.recording:
+                self.close_file()
+        winning_score = self.game.checkFullBoard(self)
+        if winning_score is not False:
+            for player in self.players:
+                if player.score == winning_score:
+                    winner = player
+                    break            
+            print(f"{winner.color} wins!")
+            return
+        else:
+            self.switch_player() 
+        
+    def close_file(self):
+        with open('gameplay.txt', 'r') as file:
+            file.close()
 
 class RootWidget(BoxLayout):
     pass
@@ -183,10 +235,6 @@ class SOSApp(App):
         self.board.current_player = self.board.players[0]
         buttons = self.root.ids.bottom_layout
         buttons.disabled = False
-        blue_cpu_selection = self.root.ids.blue_computer_button
-        #blue_cpu_selection.disabled = True
-        red_cpu_selection = self.root.ids.red_computer_button
-        #red_cpu_selection.disabled = True
         turn_indicator = self.root.ids.turn_indicator
         turn_indicator.text = f"Current Turn: {self.board.current_player.color}"
         

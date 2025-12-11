@@ -10,10 +10,13 @@ class Player():
 
 
 class Human(Player):
-    #Undo last move function?
-    pass
+    def __init__(self, color):
+        super().__init__(color)
 
 class Computer(Player):
+    def __init__(self, color):
+        super().__init__(color)
+
     def calculate_move(board):
         instructions = f'''
         The game board is a grid of n*n (n>2) squares. The two players take turns to add either an "S" or
